@@ -13,5 +13,10 @@
     </ion-toolbar>
   </ion-header>
 
-  <app-explore-container name="Tab 1 page"></app-explore-container>
+  <ion-content>
+    <ion-button expand="full" (click)="onPickImage()">Add image</ion-button>
+    <ion-card *ngFor="let img of images; index as i">
+      <ion-img [src]="img" (click)="onUploadImage(i)"></ion-img>
+    </ion-card>
+  </ion-content>
 </ion-content>
