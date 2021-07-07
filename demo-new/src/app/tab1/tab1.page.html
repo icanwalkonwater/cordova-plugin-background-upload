@@ -15,8 +15,12 @@
 
   <ion-content>
     <ion-button expand="full" (click)="onPickImage()">Add image</ion-button>
-    <ion-card *ngFor="let img of images; index as i">
-      <ion-img [src]="img" (click)="onUploadImage(i)"></ion-img>
+    <ion-card *ngFor="let img of images | keyvalue">
+      <ion-img [src]="img.value" (click)="onClickImage(img.key)"></ion-img>
+      <ion-progress-bar
+        *ngIf="uploadStates.has(img.key)"
+        [color]="uploadStates.get(img.key).color"
+        [value]="uploadStates.get(img.key).progress"></ion-progress-bar>
     </ion-card>
   </ion-content>
 </ion-content>

@@ -18,8 +18,8 @@ declare const FileTransferManager: any;
 export class Tab1Page {
   uploader: any;
 
-  images: Array<string> = [];
-  imageUris: Array<string> = [];
+  images: Map<number, string> = new Map();
+  imageUris: Map<number, string> = new Map();
   uploadStates: Map<number, UploadState> = new Map();
 
   constructor(
@@ -35,7 +35,7 @@ export class Tab1Page {
         console.log(event);
 
         this.zone.run(() => {
-          const id = event.id - ID_OFFSET;
+          const id = Number.parseInt(event.id, 10);
 
           if (!this.uploadStates.has(id)) {
             this.uploadStates.set(id, new UploadState());
@@ -63,16 +63,34 @@ export class Tab1Page {
                 .then((alert) => alert.present());
               break;
           }
+
+          console.log('New state:', state);
+
+          if (event.eventId) {
+            console.log('ACK');
+            this.uploader.acknowledgeEvent(event.eventId);
+          }
         });
       });
     });
   }
 
   async onPickImage() {
+    // Check permissions beforehand because if we let imagePicker do it
+    // he will return nonsense
+    const hasPermissions = await this.imagePicker.hasReadPermission();
+    if (!hasPermissions) {
+      await this.imagePicker.requestReadPermission();
+      return;
+    }
+
     try {
       const uris: Array<string> = await this.imagePicker.getPictures({});
+      const generatedKeys = this.generateUniqueIds(uris.length);
       console.log(uris);
-      this.imageUris.push(...uris);
+      uris.forEach((uri, i) => {
+        this.imageUris.set(generatedKeys[i], uri);
+      });
 
       const data = await Promise.all(uris.map((uri) => {
         const pathSplit = uri.split('/');
@@ -80,43 +98,74 @@ export class Tab1Page {
         const dir = pathSplit.join('/');
         return this.file.readAsDataURL(dir, filename);
       }));
-      this.images.push(...data);
+
+      data.forEach((d, i) => {
+        this.images.set(generatedKeys[i], d);
+      });
     } catch (err) {
       const alert = await this.alertController.create({
         header: 'An error occurred',
         message: JSON.stringify(err),
-        buttons: ['Ok =('],
+        buttons: ['Ok'],
       });
 
       await alert.present();
     }
   }
 
-  onUploadImage(id: number) {
-    const uri = this.imageUris[id];
+  onClickImage(id: number) {
+    if (!this.uploadStates.has(id)) {
+      // Start upload
+      this.uploadImage(id);
+    } else {
+      // Remove download
+      const state = this.uploadStates.get(id);
+      this.uploader.removeUpload(id, (res) => {
 
-    console.log('Start upload');
+        console.log('Remove result:', res);
+        this.zone.run(() => {
+          state.status = UploadStatus.Aborted;
+          state.progress = 1.0;
+        });
+
+      }, async (err) => {
+        console.warn('Remove error:', err);
+        const alert = await this.alertController.create({
+          header: 'Error removing upload',
+        });
+        await alert.present();
+      });
+    }
+  }
+
+  uploadImage(id: number) {
+    const uri = this.imageUris.get(id);
+    console.log('Upload id', id);
+
     const options = {
-      serverUrl: 'https://en7paaa03bwd.x.pipedream.net/',
+      serverUrl: 'https://dlptest.com/http-post/',
       filePath: uri,
       fileKey: 'file',
-      id: id + ID_OFFSET,
+      id,
       notificationTitle: 'Uploading image (Job 0)',
-      headers: {},
-      parameters: {
-        colors: 1,
-        faces: 1,
-        image_metadata: 1,
-        phash: 1,
-        signature: '924736486',
-        tags: 'device_id_F13F74C5-4F03-B800-2F76D3C37B27',
-        timestamp: 1572858811,
-        type: 'authenticated'
-      }
     };
-    console.log(options);
     this.uploader.startUpload(options);
     console.log('Upload submitted');
+  }
+
+  generateUniqueIds(count: number): Array<number> {
+    const random = () => Math.round(Math.random() * 10000);
+    const keys = Array(count).fill(undefined);
+
+    for (let i = 0; i < count; i++) {
+      let key = random();
+      while (this.imageUris.has(key) || keys.includes(key) || key === 0) {
+        key = random();
+      }
+      keys[i] = key;
+    }
+
+    return keys;
   }
 }
 
@@ -127,9 +176,24 @@ export enum UploadStatus {
   Done,
   // eslint-disable-next-line @typescript-eslint/naming-convention
   Failed,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  Aborted,
 }
 
 export class UploadState {
   status = UploadStatus.InProgress;
   progress = 0;
+
+  get color(): string {
+    switch (this.status) {
+      case UploadStatus.InProgress:
+        return 'tertiary';
+      case UploadStatus.Done:
+        return 'success';
+      case UploadStatus.Failed:
+        return 'danger';
+      case UploadStatus.Aborted:
+        return 'dark';
+    }
+  }
 }
